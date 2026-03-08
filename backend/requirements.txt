@@ -1,0 +1,7 @@
+torch
+sounddevice
+soundfile
+numpy
+python-osc
+safpy
+websockets

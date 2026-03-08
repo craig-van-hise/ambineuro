@@ -1,0 +1,8 @@
+setup.py
+safpy/__init__.py
+safpy/binaural.py
+safpy.egg-info/PKG-INFO
+safpy.egg-info/SOURCES.txt
+safpy.egg-info/dependency_links.txt
+safpy.egg-info/requires.txt
+safpy.egg-info/top_level.txt
