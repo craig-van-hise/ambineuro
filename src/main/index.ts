@@ -10,9 +10,9 @@ function startPythonEngine(): void {
   let args: string[] = []
 
   if (is.dev) {
-    const venvPython = join(app.getAppPath(), 'backend/venv/bin/python')
+    // In dev, use the venv python directly
+    enginePath = join(app.getAppPath(), 'backend/venv/bin/python')
     const engineScript = join(app.getAppPath(), 'backend/engine.py')
-    enginePath = venvPython
     args = [engineScript]
   } else {
     // In production, the executable is in extraResources
@@ -20,25 +20,41 @@ function startPythonEngine(): void {
     args = []
   }
 
-  console.log(`Starting Python engine: ${enginePath} ${args.join(' ')}`)
+  console.log(`[Main] Spawning Python Engine: ${enginePath} ${args.join(' ')}`)
 
-  pythonProcess = spawn(enginePath, args)
+  try {
+    pythonProcess = spawn(enginePath, args, {
+      cwd: join(app.getAppPath(), 'backend'),
+      env: { ...process.env, PYTHONPATH: join(app.getAppPath(), 'backend') }
+    })
 
-  pythonProcess.stdout?.on('data', (data) => {
-    console.log(`Python: ${data}`)
-  })
+    if (pythonProcess.pid) {
+      console.log(`[Main] Python process started with PID: ${pythonProcess.pid}`)
+    }
 
-  pythonProcess.stderr?.on('data', (data) => {
-    console.error(`Python Error: ${data}`)
-  })
+    pythonProcess.stdout?.on('data', (data) => {
+      console.log(`[Python STDOUT] ${data.toString().trim()}`)
+    })
 
-  pythonProcess.on('close', (code) => {
-    console.log(`Python process exited with code ${code}`)
-  })
+    pythonProcess.stderr?.on('data', (data) => {
+      console.error(`[Python STDERR] ${data.toString().trim()}`)
+    })
+
+    pythonProcess.on('error', (err) => {
+      console.error(`[Main] Failed to start Python process: ${err}`)
+    })
+
+    pythonProcess.on('close', (code) => {
+      console.log(`[Main] Python process exited with code ${code}`)
+    })
+  } catch (error) {
+    console.error(`[Main] Exception while spawning Python: ${error}`)
+  }
 }
 
 function stopPythonEngine(): void {
   if (pythonProcess) {
+    console.log('[Main] Stopping Python engine...')
     pythonProcess.kill('SIGTERM')
     pythonProcess = null
   }
@@ -47,8 +63,8 @@ function stopPythonEngine(): void {
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: 1100,
+    height: 800,
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -80,7 +96,7 @@ function createWindow(): void {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.ambineuro.app')
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -117,6 +133,3 @@ app.on('window-all-closed', () => {
 app.on('quit', () => {
   stopPythonEngine()
 })
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.

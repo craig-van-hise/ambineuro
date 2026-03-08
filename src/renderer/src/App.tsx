@@ -1,21 +1,36 @@
+import { useState, useEffect } from 'react'
 import { AmbisonicDropZone } from './components/AmbisonicDropZone'
 import { SOFADropZone } from './components/SOFADropZone'
 import { DecoderEnginePanel } from './components/DecoderEnginePanel'
 import { CompassWidget } from './components/CompassWidget'
 import { TransportBar } from './components/TransportBar'
 import { useEngine } from './hooks/useEngine'
-import { Activity, Radio, Waves } from 'lucide-react'
+import { Activity, Radio, Waves, RefreshCw, AlertCircle } from 'lucide-react'
 
 function App() {
-  const { status, state, send } = useEngine()
+  const { status, state, send, lastError } = useEngine()
+  
+  // Optimistic local state for INSTANT UI response
+  const [localOrientation, setLocalOrientation] = useState({ yaw: 0, pitch: 0, roll: 0 })
+  const [localVolume, setLocalVolume] = useState(1.0)
+  const [localPlaying, setLocalPlaying] = useState(false)
+
+  // Sync local state when backend updates arrive (only when connected)
+  useEffect(() => {
+    if (status === 'connected') {
+      setLocalOrientation(state.orientation)
+      setLocalVolume(state.volume)
+      setLocalPlaying(state.playing)
+    }
+  }, [state.orientation, state.volume, state.playing, status])
 
   const handleAmbisonicDrop = (file: File) => {
-    console.log('Ambisonic file dropped:', file.name)
+    console.log('Ambisonic file dropped:', (file as any).path)
     send({ type: 'load_audio', path: (file as any).path })
   }
 
   const handleSOFADrop = (file: File) => {
-    console.log('SOFA file dropped:', file.name)
+    console.log('SOFA file dropped:', (file as any).path)
     send({ type: 'load_hrtf', path: (file as any).path })
   }
 
@@ -25,10 +40,25 @@ function App() {
   }
 
   const handleManualOrientation = (newOri: { yaw?: number, pitch?: number, roll?: number }) => {
-    send({ 
-      type: 'set_orientation', 
-      orientation: { ...state.orientation, ...newOri } 
-    })
+    const updated = { ...localOrientation, ...newOri }
+    setLocalOrientation(updated) // Immediate UI movement
+    send({ type: 'set_orientation', orientation: updated })
+  }
+
+  const handleVolumeChange = (vol: number) => {
+    setLocalVolume(vol) // Immediate UI movement
+    send({ type: 'set_volume', volume: vol })
+  }
+
+  const handlePlayPause = () => {
+    const nextPlaying = !localPlaying
+    setLocalPlaying(nextPlaying) // Immediate UI movement
+    send({ type: nextPlaying ? 'play' : 'pause' })
+  }
+
+  const handleStop = () => {
+    setLocalPlaying(false)
+    send({ type: 'stop' })
   }
 
   return (
@@ -46,10 +76,29 @@ function App() {
         </div>
 
         <div className="flex items-center space-x-6">
+          {lastError && (
+            <div className="flex items-center space-x-2 text-red-400 bg-red-500/10 px-3 py-1.5 rounded-full border border-red-500/20 animate-pulse">
+              <AlertCircle className="w-4 h-4" />
+              <span className="text-[10px] font-bold uppercase">{lastError}</span>
+            </div>
+          )}
+
+          <button 
+            onClick={() => window.location.reload()}
+            className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-500 hover:text-white"
+            title="Reload Connection"
+          >
+            <RefreshCw className={`w-4 h-4 ${status === 'connecting' ? 'animate-spin' : ''}`} />
+          </button>
+          
           <div className="flex items-center space-x-2 px-3 py-1.5 bg-slate-900/50 border border-slate-800 rounded-full">
-            <div className={`w-2 h-2 rounded-full ${status === 'connected' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></div>
+            <div className={`w-2 h-2 rounded-full ${
+              status === 'connected' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 
+              status === 'connecting' ? 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.6)]' :
+              'bg-red-500'
+            }`}></div>
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Engine: {status}
+              {status}
             </span>
           </div>
           <Activity className="w-5 h-5 text-slate-600 hover:text-blue-400 cursor-pointer transition-colors" />
@@ -84,7 +133,7 @@ function App() {
           
           <section className="relative z-10">
             <CompassWidget 
-              orientation={state.orientation} 
+              orientation={localOrientation} 
               oscActive={state.osc_active}
               onManualChange={handleManualOrientation}
             />
@@ -94,15 +143,15 @@ function App() {
 
       {/* Transport */}
       <TransportBar 
-        playing={state.playing}
+        playing={localPlaying}
         position={state.position}
         duration={state.duration}
-        volume={state.volume}
-        onPlay={() => send({ type: 'play' })}
-        onPause={() => send({ type: 'pause' })}
-        onStop={() => send({ type: 'stop' })}
+        volume={localVolume}
+        onPlay={handlePlayPause}
+        onPause={handlePlayPause}
+        onStop={handleStop}
         onSeek={(pos) => send({ type: 'seek', position: pos })}
-        onVolumeChange={(vol) => send({ type: 'set_volume', volume: vol })}
+        onVolumeChange={handleVolumeChange}
       />
 
       {/* Footer / Status Bar */}

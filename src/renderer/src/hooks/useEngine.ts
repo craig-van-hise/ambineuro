@@ -14,7 +14,8 @@ export interface EngineState {
 }
 
 export const useEngine = () => {
-  const [status, setStatus] = useState<'connected' | 'disconnected'>('disconnected')
+  const [status, setStatus] = useState<'connected' | 'disconnected' | 'connecting'>('disconnected')
+  const [lastError, setLastError] = useState<string | null>(null)
   const [state, setState] = useState<EngineState>({
     playing: false,
     position: 0,
@@ -25,15 +26,20 @@ export const useEngine = () => {
   })
   
   const socketRef = useRef<WebSocket | null>(null)
+  const reconnectTimeoutRef = useRef<any>(null)
 
   const connect = useCallback(() => {
-    if (socketRef.current?.readyState === WebSocket.OPEN) return
+    if (socketRef.current?.readyState === WebSocket.OPEN || 
+        socketRef.current?.readyState === WebSocket.CONNECTING) return
 
-    const ws = new WebSocket('ws://localhost:8001')
+    setStatus('connecting')
+    // Try 127.0.0.1 first as it's often more reliable than localhost resolution
+    const ws = new WebSocket('ws://127.0.0.1:8002')
 
     ws.onopen = () => {
-      console.log('WebSocket connected to ws://localhost:8001')
+      console.log('WebSocket connected to Engine')
       setStatus('connected')
+      setLastError(null)
     }
 
     ws.onmessage = (event) => {
@@ -44,18 +50,20 @@ export const useEngine = () => {
           setState(engineState)
         }
       } catch (e) {
-        console.error('Failed to parse WebSocket message:', event.data, e)
+        console.error('Failed to parse message:', e)
       }
     }
 
     ws.onclose = (event) => {
       console.log('WebSocket closed:', event.code, event.reason)
       setStatus('disconnected')
-      setTimeout(connect, 2000)
+      // Reconnect after 2 seconds
+      reconnectTimeoutRef.current = setTimeout(connect, 2000)
     }
 
     ws.onerror = (error) => {
       console.error('WebSocket error:', error)
+      setLastError('Connection failed. Is the backend running?')
     }
 
     socketRef.current = ws
@@ -64,6 +72,7 @@ export const useEngine = () => {
   useEffect(() => {
     connect()
     return () => {
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current)
       socketRef.current?.close()
     }
   }, [connect])
@@ -74,5 +83,5 @@ export const useEngine = () => {
     }
   }, [])
 
-  return { status, state, send }
+  return { status, state, send, lastError }
 }
